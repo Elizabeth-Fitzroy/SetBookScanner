@@ -29,7 +29,8 @@ class GeminiScannerService(private val apiKey: String = BuildConfig.GEMINI_API_K
             )
         }
 
-        val modelsToTry = listOf("gemini-1.5-flash", "gemini-1.5-pro")
+        // 無料で利用可能な最新モデル（メイン: 3.8-flash、フォールバック: 2.5-flash）
+        val modelsToTry = listOf("gemini-3.8-flash", "gemini-2.5-flash")
         var lastException: Exception? = null
 
         for (modelName in modelsToTry) {
