@@ -4,12 +4,10 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
-import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageProxy
-import androidx.camera.core.Preview
-import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.LifecycleCameraController
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -27,7 +25,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,7 +35,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
-import java.util.concurrent.Executors
 
 @Composable
 fun CameraPreviewScreen(
@@ -47,37 +43,18 @@ fun CameraPreviewScreen(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
-    val imageCapture = remember { ImageCapture.Builder().build() }
+    val cameraController = remember {
+        LifecycleCameraController(context).apply {
+            bindToLifecycle(lifecycleOwner)
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         AndroidView(
             factory = { ctx ->
-                val previewView = PreviewView(ctx)
-                val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
-
-                cameraProviderFuture.addListener({
-                    val cameraProvider = cameraProviderFuture.get()
-                    val preview = Preview.Builder().build().also {
-                        it.setSurfaceProvider(previewView.surfaceProvider)
-                    }
-
-                    val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-
-                    try {
-                        cameraProvider.unbindAll()
-                        cameraProvider.bindToLifecycle(
-                            lifecycleOwner,
-                            cameraSelector,
-                            preview,
-                            imageCapture
-                        )
-                    } catch (e: Exception) {
-                        onError("カメラの起動に失敗しました: ${e.message}")
-                    }
-                }, ContextCompat.getMainExecutor(ctx))
-
-                previewView
+                PreviewView(ctx).apply {
+                    controller = cameraController
+                }
             },
             modifier = Modifier.fillMaxSize()
         )
@@ -107,10 +84,9 @@ fun CameraPreviewScreen(
         // 撮影ボタン
         FloatingActionButton(
             onClick = {
-                takePhoto(
+                takePhotoWithController(
                     context = context,
-                    imageCapture = imageCapture,
-                    cameraExecutor = cameraExecutor,
+                    cameraController = cameraController,
                     onImageCaptured = onImageCaptured,
                     onError = onError
                 )
@@ -130,37 +106,25 @@ fun CameraPreviewScreen(
             )
         }
     }
-
-    DisposableEffect(Unit) {
-        onDispose {
-            cameraExecutor.shutdown()
-        }
-    }
 }
 
-private fun takePhoto(
+private fun takePhotoWithController(
     context: Context,
-    imageCapture: ImageCapture,
-    cameraExecutor: java.util.concurrent.Executor,
+    cameraController: LifecycleCameraController,
     onImageCaptured: (Bitmap) -> Unit,
     onError: (String) -> Unit
 ) {
-    imageCapture.takePicture(
-        cameraExecutor,
+    cameraController.takePicture(
+        ContextCompat.getMainExecutor(context),
         object : ImageCapture.OnImageCapturedCallback() {
             override fun onCaptureSuccess(image: ImageProxy) {
                 val bitmap = imageProxyToBitmap(image)
                 image.close()
-
-                ContextCompat.getMainExecutor(context).execute {
-                    onImageCaptured(bitmap)
-                }
+                onImageCaptured(bitmap)
             }
 
             override fun onError(exception: ImageCaptureException) {
-                ContextCompat.getMainExecutor(context).execute {
-                    onError("撮影に失敗しました: ${exception.message}")
-                }
+                onError("撮影に失敗しました: ${exception.message}")
             }
         }
     )

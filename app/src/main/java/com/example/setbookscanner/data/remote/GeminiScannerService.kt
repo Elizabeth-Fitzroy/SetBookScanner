@@ -1,6 +1,7 @@
 package com.example.setbookscanner.data.remote
 
 import android.graphics.Bitmap
+import android.util.Log
 import com.example.setbookscanner.BuildConfig
 import com.example.setbookscanner.data.model.BookSetResult
 import com.google.ai.client.generativeai.GenerativeModel
@@ -12,6 +13,10 @@ import kotlinx.serialization.json.Json
 
 class GeminiScannerService(private val apiKey: String = BuildConfig.GEMINI_API_KEY) {
 
+    companion object {
+        private const val TAG = "GeminiScannerService"
+    }
+
     private val json = Json {
         ignoreUnknownKeys = true
         isLenient = true
@@ -19,12 +24,17 @@ class GeminiScannerService(private val apiKey: String = BuildConfig.GEMINI_API_K
 
     suspend fun analyzeBookSpines(bitmap: Bitmap): Result<BookSetResult> = withContext(Dispatchers.IO) {
         if (apiKey.isBlank()) {
+            Log.e(TAG, "API Key is blank!")
             return@withContext Result.failure(
-                IllegalArgumentException("Gemini API Keyが設定されていません。local.properties に GEMINI_API_KEY を設定してください。")
+                IllegalArgumentException("Gemini API Keyが設定されていません。local.propertiesに有効な GEMINI_API_KEY を設定してください。")
             )
         }
 
+        // 動作実績のある gemini-3.8-flash を直接使用し、画像リサイズ（768px）と合わせて最速で応答させる
+        val modelName = "gemini-3.8-flash"
+
         try {
+            Log.d(TAG, "Calling Gemini API with model: $modelName")
             val systemInstructionText = """
                 あなたは古本（漫画・小説・書籍等）の背表紙画像から情報を正確に読み取るAIアシスタントです。
                 送信された背表紙の画像から、以下の規則に従って結果をJSON形式で返答してください。
@@ -43,7 +53,7 @@ class GeminiScannerService(private val apiKey: String = BuildConfig.GEMINI_API_K
             }
 
             val generativeModel = GenerativeModel(
-                modelName = "gemini-1.5-flash",
+                modelName = modelName,
                 apiKey = apiKey,
                 generationConfig = config,
                 systemInstruction = content { text(systemInstructionText) }
@@ -66,9 +76,13 @@ class GeminiScannerService(private val apiKey: String = BuildConfig.GEMINI_API_K
                 .trim()
 
             val result = json.decodeFromString<BookSetResult>(cleanedJson)
+            Log.d(TAG, "Successfully analyzed with model $modelName: $result")
             Result.success(result)
         } catch (e: Exception) {
-            Result.failure(e)
+            Log.e(TAG, "Gemini API error with model $modelName: ${e.message}", e)
+            Result.failure(
+                RuntimeException("Gemini APIエラー: ${e.message}")
+            )
         }
     }
 }

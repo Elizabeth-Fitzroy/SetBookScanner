@@ -8,7 +8,8 @@ class BookScannerRepository(
     private val geminiService: GeminiScannerService = GeminiScannerService()
 ) {
     suspend fun analyzeSpines(bitmap: Bitmap): Result<BookSetResult> {
-        val scaledBitmap = scaleBitmapIfNeeded(bitmap, maxDimension = 1024)
+        // タイムアウトを防ぎ、高速化するため最大512pxに軽量リサイズ
+        val scaledBitmap = scaleBitmapIfNeeded(bitmap, maxDimension = 512)
         return geminiService.analyzeBookSpines(scaledBitmap)
     }
 
